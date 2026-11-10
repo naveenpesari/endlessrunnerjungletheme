@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jungle Runner — Endless Survival</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101b1b;font-family:Arial,Helvetica,sans-serif;color:#fff}
+canvas{display:block;width:100vw;height:100vh}
+#hud{position:fixed;inset:14px 16px auto;display:grid;grid-template-columns:1fr 1fr;gap:8px;pointer-events:none}
+.panel{background:#07110fdc;border:1px solid #ffffff25;padding:9px 12px;min-width:150px;max-width:260px;box-shadow:0 4px 16px #0005}
+.row{display:flex;justify-content:space-between;gap:12px;font-size:12px;font-weight:bold;letter-spacing:.6px}
+.track{height:7px;background:#39423d;margin-top:6px;overflow:hidden}.fill{height:100%;width:100%;transition:width .15s}
+#healthFill{background:#e94444}#threatFill{background:#e9a43c}#staminaFill{background:#e8c84b}
+#rightHud{justify-self:end;text-align:right}
+#pause{position:fixed;right:18px;top:120px;border:1px solid #ffffff55;background:#07110fe8;color:white;border-radius:50%;width:42px;height:42px;font-size:19px;cursor:pointer}
+#overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#07110fbd;text-align:center;padding:20px}
+#card{max-width:480px;background:#101d19ed;border:1px solid #d5c18a66;padding:28px 30px;box-shadow:0 20px 70px #0009}
+h1{margin:0 0 10px;color:#e9d28c;font-size:clamp(28px,5vw,46px);letter-spacing:2px}
+p{line-height:1.55;color:#d8e0d9}.small{font-size:13px;color:#b7c4ba}
+button.action{background:#d4ae55;color:#1a2119;border:0;padding:12px 24px;font-weight:bold;letter-spacing:1px;cursor:pointer;margin-top:10px}
+#mobile{position:fixed;bottom:16px;left:0;right:0;display:flex;justify-content:center;gap:12px}
+#mobile button{background:#07110fc9;color:#fff;border:1px solid #ffffff55;border-radius:12px;padding:13px 18px;font-size:15px;touch-action:none}
+@media(min-width:800px){#mobile{opacity:.35}#mobile:hover{opacity:1}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+ <div>
+  <div class="panel"><div class="row"><span>➤ DISTANCE</span><span id="distance">0 m</span></div></div>
+  <div class="panel"><div class="row"><span>♥ HEALTH</span><span id="health">3</span></div><div class="track"><div id="healthFill" class="fill"></div></div></div>
+  <div class="panel"><div class="row"><span>ZOMBIE THREAT</span><span id="threat">LOW</span></div><div class="track"><div id="threatFill" class="fill"></div></div></div>
+ </div>
+ <div id="rightHud">
+  <div class="panel"><div class="row"><span>★ COINS</span><span id="coins">0</span></div></div>
+  <div class="panel"><div class="row"><span>SCORE</span><span id="score">0</span></div></div>
+  <div class="panel"><div class="row"><span>TIME</span><span id="time">00:00</span></div></div>
+  <div class="panel"><div class="row"><span>STAMINA</span></div><div class="track"><div id="staminaFill" class="fill"></div></div></div>
+ </div>
+</div>
+<button id="pause" aria-label="Pause">Ⅱ</button>
+<div id="overlay"><div id="card"><h1>JUNGLE RUNNER</h1><p>Run through the haunted jungle, collect gold coins and dodge rocks, fallen logs and crates. Stay ahead of the zombie threat!</p><p class="small">Move: ← → or A / D &nbsp; • &nbsp; Jump: ↑ / W / Space<br>Slide: ↓ / S &nbsp; • &nbsp; Pause: P</p><button class="action" id="start">START RUN</button></div></div>
+<div id="mobile"><button data-key="ArrowLeft">◀</button><button data-key="ArrowUp">JUMP</button><button data-key="ArrowDown">SLIDE</button><button data-key="ArrowRight">▶</button></div>
+<script>
+(()=>{
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+let W,H,dpr=1;
+function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;canvas.width=W*dpr;canvas.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',resize);resize();
+const $=id=>document.getElementById(id);
+let running=false,paused=false,over=false,last=0,elapsed=0,distance=0,coins=0,health=3,stamina=100,threat=8,speed=0.34,spawn=0;
+let lane=0,playerY=0,vy=0,slide=0,invuln=0,items=[];
+const lanes=[-.58,0,.58];
+const rand=(a,b)=>a+Math.random()*(b-a);
+function reset(){elapsed=distance=coins=spawn=0;health=3;stamina=100;threat=8;speed=.34;lane=0;playerY=vy=slide=invuln=0;items=[];over=false}
+function start(){reset();running=true;paused=false;$('overlay').style.display='none';last=performance.now();requestAnimationFrame(loop)}
+function end(){running=false;over=true;$('overlay').style.display='flex';$('card').innerHTML=`<h1>RUN OVER</h1><p>You survived <b>${Math.floor(distance)} m</b> and collected <b>${coins}</b> coins.</p><p class="small">Final score: ${Math.floor(distance*4+coins*25)}</p><button class="action" id="start">RUN AGAIN</button>`;$('start').onclick=start}
+function togglePause(){if(!running)return;paused=!paused;$('pause').textContent=paused?'▶':'Ⅱ';if(!paused){last=performance.now();requestAnimationFrame(loop)}}
+$('start').onclick=start;$('pause').onclick=togglePause;
+function key(k){if(!running||paused)return;if(k==='ArrowLeft'||k==='a'||k==='A')lane=Math.max(-1,lane-1);if(k==='ArrowRight'||k==='d'||k==='D')lane=Math.min(1,lane+1);if(k==='ArrowUp'||k==='w'||k==='W'||k===' ')jump();if(k==='ArrowDown'||k==='s'||k==='S')slide=0.7}
+addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key))e.preventDefault();if(e.key==='p'||e.key==='P'){togglePause();return}key(e.key)});
+document.querySelectorAll('#mobile button').forEach(b=>{b.addEventListener('pointerdown',e=>{e.preventDefault();key(b.dataset.key)})});
+function jump(){if(playerY<=0.01){vy=7.8;stamina=Math.max(0,stamina-7)}}
+function project(x,z){let horizon=H*.34,depth=1/(1+z*.075),roadHalf=W*.43*depth;return {x:W/2+x*roadHalf,y:horizon+(H-horizon)*depth,scale:depth,half:roadHalf}}
+function spawnItem(){let r=Math.random(),l=Math.floor(rand(0,3))-1;items.push({type:r<.58?'coin':r<.74?'rock':r<.88?'log':'crate',lane:l,z:rand(65,90),hit:false})}
+function drawTree(x,y,s,kind){ctx.save();ctx.translate(x,y);ctx.scale(s,s);ctx.fillStyle='#342f27';ctx.fillRect(-4,-42,8,48);if(kind%2){ctx.fillStyle='#173c36';for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(0,-115+i*24);ctx.lineTo(-35,-55+i*20);ctx.lineTo(35,-55+i*20);ctx.closePath();ctx.fill()}}else{ctx.fillStyle='#234b3e';ctx.beginPath();ctx.arc(0,-75,31,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(-20,-60,23,0,Math.PI*2);ctx.arc(20,-60,23,0,Math.PI*2);ctx.fill()}ctx.restore()}
+function background(){
+ let sky=ctx.createLinearGradient(0,0,0,H*.55);sky.addColorStop(0,'#344b4b');sky.addColorStop(1,'#a1a17d');ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+ ctx.fillStyle='#263c35';ctx.fillRect(0,H*.34,W,H*.66);
+ // distant forest
+ for(let i=0;i<28;i++){let x=(i*137)%W,y=H*.38+(i%4)*7;drawTree(x,y,rand(.45,.85),i)}
+ // path perspective
+ let hy=H*.34;ctx.fillStyle='#665e50';ctx.beginPath();ctx.moveTo(W/2-W*.055,hy);ctx.lineTo(W/2+W*.055,hy);ctx.lineTo(W*.92,H);ctx.lineTo(W*.08,H);ctx.closePath();ctx.fill();
+ ctx.strokeStyle='#847866';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(W/2-W*.055,hy);ctx.lineTo(W*.08,H);ctx.moveTo(W/2+W*.055,hy);ctx.lineTo(W*.92,H);ctx.stroke();
+ // road texture
+ for(let i=0;i<38;i++){let z=(i*13+(distance*1.8)%13);let p=project(0,z);ctx.fillStyle=i%2?'#756b5a':'#5b554a';ctx.fillRect(p.x-p.half*.95,p.y,p.half*1.9,Math.max(1,2*p.scale))}
+ // roadside trees
+ for(let side of [-1,1])for(let i=0;i<10;i++){let z=(i*9+(distance*.55)%9)+3,p=project(side*rand(1.5,2.5),z);drawTree(p.x,p.y,p.scale*rand(.7,1.35),i+side)}
+}
+function drawPlayer(){
+ let p=project(lanes[lane]*.82,0),x=p.x,y=H*.82-playerY*9;
+ ctx.save();ctx.translate(x,y);
+ if(slide>0){ctx.fillStyle='#245b56';ctx.beginPath();ctx.ellipse(0,0,22,10,0,0,Math.PI*2);ctx.fill()}
+ else{ctx.fillStyle='#1d3431';ctx.fillRect(-9,0,7,19);ctx.fillRect(3,0,7,19);ctx.fillStyle='#2b7770';ctx.fillRect(-12,-30,24,30);ctx.fillStyle='#b5a98a';ctx.beginPath();ctx.arc(0,-38,9,0,Math.PI*2);ctx.fill();ctx.fillStyle='#193b39';ctx.fillRect(-10,-28,20,5)}
+ ctx.restore();
+}
+function drawItems(){
+ items.sort((a,b)=>b.z-a.z);
+ for(let it of items){let p=project(lanes[it.lane],it.z),x=p.x,y=p.y,s=p.scale;
+ if(it.type==='coin'){ctx.fillStyle='#f4c43f';ctx.beginPath();ctx.ellipse(x,y-12*s,7*s,11*s,0,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#fff0a0';ctx.lineWidth=2*s;ctx.stroke()}
+ else{ctx.fillStyle=it.type==='rock'?'#514b43':it.type==='log'?'#59412e':'#79583b';let w=(it.type==='log'?34:28)*s,h=(it.type==='rock'?22:19)*s;ctx.fillRect(x-w/2,y-h,w,h);if(it.type==='crate'){ctx.strokeStyle='#b38b5a';ctx.lineWidth=2*s;ctx.strokeRect(x-w/2,y-h,w,h);ctx.beginPath();ctx.moveTo(x-w/2,y-h);ctx.lineTo(x+w/2,y);ctx.moveTo(x+w/2,y-h);ctx.lineTo(x-w/2,y);ctx.stroke()}}
+ }
+}
+function update(dt){
+ elapsed+=dt;distance+=speed*dt*42;speed=Math.min(.72,.34+distance*.00016);threat=Math.min(100,8+distance*.14);
+ stamina=Math.min(100,stamina+dt*7);if(slide>0)slide=Math.max(0,slide-dt);if(invuln>0)invuln-=dt;
+ vy-=18*dt;playerY=Math.max(0,playerY+vy*dt);if(playerY===0)vy=0;
+ spawn-=dt;if(spawn<=0){spawn=rand(.45,.8)/ (speed/.34);spawnItem()}
+ for(let it of items){it.z-=speed*dt*24;if(!it.hit&&it.z<2.4&&it.z>-1&&it.lane===lane){if(it.type==='coin'){coins++;it.hit=true}else{let safe=(it.type==='log'?slide>0:playerY>.75);if(!safe&&invuln<=0){health--;invuln=1.2;it.hit=true;if(health<=0){end();return}}else if(safe)it.hit=true}}}
+ items=items.filter(i=>i.z>-3&&!i.hit);
+ $('distance').textContent=Math.floor(distance)+' m';$('coins').textContent=coins;$('health').textContent=health;$('score').textContent=Math.floor(distance*4+coins*25);$('time').textContent=String(Math.floor(elapsed/60)).padStart(2,'0')+':'+String(Math.floor(elapsed%60)).padStart(2,'0');$('healthFill').style.width=(health/3*100)+'%';$('threatFill').style.width=threat+'%';$('threat').textContent=threat<35?'LOW':threat<70?'RISING':'DANGER';$('staminaFill').style.width=stamina+'%';
+}
+function render(){ctx.clearRect(0,0,W,H);background();drawItems();drawPlayer();if(invuln>0){ctx.fillStyle='#ffffff20';ctx.fillRect(0,0,W,H)}}
+function loop(now){if(!running||paused)return;let dt=Math.min((now-last)/1000,.04);last=now;update(dt);if(running){render();requestAnimationFrame(loop)}}
+render();
+})();
+</script>
+</body>
+</html>
